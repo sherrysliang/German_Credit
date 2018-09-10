@@ -1,0 +1,180 @@
+---
+title: "Principal Components Analysis"
+author: "Sherry Liang"
+date: "1/31/2018"
+output: html_document
+---
+### Split sample
+#### Select only numeric variables
+```{r setup, include=FALSE}
+# select numeric data
+library(ggplot2)
+library(lattice)
+library(caret)
+data(GermanCredit)
+mydata <- GermanCredit[,1:7]
+head(mydata)
+```
+
+#### Split Train and Test Data
+```{r}
+#split data 70% 30%
+set.seed(830)
+n_size <- nrow(mydata)
+train_size <- 0.7* n_size
+training.set.rows <- sample(x = n_size, size = train_size, replace = FALSE)
+training.set <- mydata[training.set.rows, ]
+test.set <- mydata[-training.set.rows, ]
+```
+
+#### Scale train set
+```{r}
+# standardize train set
+training.set.scale<-scale(training.set)
+```
+
+#### Scale test set using means and sds from train set
+```{r}
+means <- colMeans(training.set)
+sds<-c()
+for (i in 1:ncol(training.set)){
+        sds[i]<-sd(training.set[,i])
+}
+test.set.scale <- data.frame()
+for (i in 1:nrow(test.set)){ 
+        for (j in 1:ncol(test.set)){
+                test.set.scale[i,j]<-((test.set[i,j]-means[j])/sds[j])
+        }
+}
+colnames(test.set.scale) <- colnames(training.set)
+head(test.set.scale)
+```
+
+### Principal Components Analysis
+```{r}
+PCAObj<-princomp(training.set.scale)
+summary(PCAObj)
+```
+
+### Scree Plot
+```{r}
+Variance <-PCAObj$sdev^2
+vaf<-cumsum(Variance)/sum(Variance)
+vaf
+```
+
+```{r}
+plot(vaf,type="b", ylab = "Cumulative Variance Explained", xlab = "Number of Components")
+```
+
+```{r}
+barplot(Variance/sum(Variance),width=2,
+        names.arg=c("F1","F2","F3","F4","F5","F6","F7"))
+```
+Based on the scree plot and the bar chart, although the elbow point is at n=6 and 90% of the variance explained, the individual explain power of component 6 is relatively low, which is around 10%. When n=5 80% of the variance is explained and all the first 5 components have relatively large explain power individually. Thus, n=5 is selected.
+
+> Since there is no obvious turning point and 5 components together explain 85% of variance. I choose to retain 5 components.
+
+### Plotting F1 against F2,3,4,5
+
+```{r}
+PCAObj$loadings
+```
+
+```{r}
+PCAObj$loadings[,1:7]
+```
+
+```{r}
+head(PCAObj$scores)
+```
+
+```{r}
+# First and second
+biplot(PCAObj, choices = c(1,2), cex=0.4, scale = 0,xlabs = rep("*", nrow(PCAObj$scores)))
+```
+> PC1 places most weight on duration and amount, I name it basic credit attributes. PC2 is all negative, but places most weight on ResidenceDuration and Age, I name it stability.
+
+```{r}
+# First and third
+biplot(PCAObj, choices = c(1,3), cex=0.6, scale = 0,xlabs = rep("*", nrow(PCAObj$scores)))
+```
+> PC3 places most weight on the InstallmentRatePercentage with negative effect, so it is rate. PC3 also places some weight on number of people meaintenance in the positive direction. 
+
+
+```{r}
+# First and fourth
+biplot(PCAObj, choices = c(1,4), cex=0.6, scale = 0,xlabs = rep("*", nrow(PCAObj$scores)))
+```
+> PC4 places weight on NumberPeopleMaintenance in the positive way.
+
+```{r}
+# First and fifth
+biplot(PCAObj, choices = c(1,5), cex=0.6, scale = 0,xlabs = rep("*", nrow(PCAObj$scores)))
+```
+PC5 incorporates effects of ResidenceDuration and Age in a positive way besides negative effects of NumberExistingCredits.
+
+Another way to see the effects:
+```{r}
+# see what component represents
+L<-PCAObj$loadings
+matplot(L[,1],L[,2:5],type="l",lty=1,col=c("darkblue","skyblue","pink","red"),lwd=3)
+matplot(1:7,L[,1:5],type="l",lty=1,col=c("darkblue","skyblue","pink","red","orange"),lwd=3)
+```
+
+- Factor 1 (darkblue): It has a positive effect for the first two predictors, negative for the third and with near zero for the remaining 4. This will lead to a net tilt effect in the linear combination. Thus it rewards amount of credit and duration of loan while slightly penalizes installment rate percentage. It can be thought of as reward for good credit and encouraging debt.
+- Factor 2 (skyblue): This has a negative influence on residence duration, age and number of existing credits. It penalizes the last 4 predictors compared to Factor 1.
+- Factor 3 (pink): This factor has a positive effect with Factor1 for most predictors and corresponds its effect. 
+- Factor 4 (red): This factor counteracts the effects of Factor 3 and can be seen as a counter balance to the effect of Factor 3 except for the last predictor.
+- Factor 5 (orange): This factor most remarkably emphasizes predictor 4 and 5 (residence duration and age) and penalizes predictor 6 (number of existing credits) compared to Factor 1.
+
+### Show component loadings are orthogonal
+```{r}
+round(t(PCAObj$loadings) %*% PCAObj$loadings,2)
+```
+
+As the result shows an identity matrix, it proves that the component loadings are orthogonal.
+
+### Show component scores are orthogonal
+```{r}
+round(t(PCAObj$scores) %*% PCAObj$scores)
+```
+
+As all non diagonal elements are zero, it is proven that component scores are orthogonal.
+
+### Holdout validation
+page 52
+```{r}
+Ftest<-predict(PCAObj,newdata = test.set.scale)
+Dtest<-Ftest[,1:5]%*%t(PCAObj$loadings[,1:5])
+(round(cor(Dtest,test.set.scale)))
+(cor(as.vector(Dtest), as.vector(data.matrix(test.set.scale)))^2)
+```
+
+The correlation between the original test data and the estimated test data for the 7 predictors are 0.95, 0.95, 0.98, 0.80, 0.80, 1.00 and 1.00. The estimated data performs well on features of duration, amount, installment rate, number of existing credits, and number of people maintenance, but relatively poor on residence duration and age.
+
+The total correlation square between the approximation and the origianl data set is 0.8505.
+
+### Variance Accounted For in the holdout set
+```{r}
+#sum(apply(Ftest, 2, sd)^2)/sum(var(test.set.scale))
+cor(as.vector(Dtest), as.vector(data.matrix(test.set.scale)))^2
+```
+85.05% of the variance is explained in the holdout set.
+
+### Q9. Rotate component loadings using varimax rotation
+
+```{r}
+rotatedLoadings<-varimax(PCAObj$loadings[,1:5])
+#rotatedLoadings$loadings
+#rotatedLoadings$rotmat
+#cor(as.vector(training.set.scale), as.vector(PCAObj$scores[,1:7]  %*% t(PCAObj$loadings)[1:7,]))^2
+cor(as.vector(training.set.scale), as.vector(PCAObj$scores[,1:5] %*% rotatedLoadings$rotmat %*% t(rotatedLoadings$rotmat) %*% t(PCAObj$loadings)[1:5,]))^2
+```
+85.39% of the variance is explained by the data after rotation, slightly improved than the unrotated model.
+
+### Plot rotated loadings(1) versus rotated loadings(2) and (3) 
+```{r}
+biplot(PCAObj$scores, rotatedLoadings$loadings[,1:3],cex=0.6,xlabs = rep("*", nrow(PCAObj$scores)))
+```
+

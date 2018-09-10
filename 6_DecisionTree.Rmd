@@ -1,0 +1,72 @@
+---
+title: "Decision Tree"
+author: "Sherry Liang"
+date: "2/16/2018"
+output: html_document
+---
+#### Build a Classification Tree model for the Training dataset for predicting the "Class" variable. 
+1) First grow a large tree by fixing cost complexity parameter=0, and choose a minimum node size for splitting as 30.
+2) use a 10 fold cross-validation. 
+
+```{r}
+train=read.csv(file="~/Documents/Analytics/Data_Mining/Assignment4/Training700.csv")
+holdout=read.csv(file="~/Documents/Analytics/Data_Mining/Assignment4/Holdout300.csv")
+train <- train[-c(1)]
+holdout <- holdout[-c(1)]
+```
+
+```{r}
+library(rpart)
+require(rpart)
+x<-rpart(Class~.,data=train,control=rpart.control(cp=0,minsplit=30,xval=10, maxsurrogate=0),method = "class")
+plot(x,main="Classification Tree: German Credit Data",col=3, compress=TRUE, branch=0.2,uniform=TRUE)
+text(x,cex=0.4,col=4,use.n=TRUE,fancy=TRUE, fwidth=0.2, fheight=0.2,bg=c(5))
+```
+
+
+#### Evaluate the complexity parameter plots and prints
+choose the cp vlaue corresponding to lowest cross validation error(xerror), and build the reduced size (pruned) tree in the training data set using the cp value corresponding to the lowest xerror
+```{r}
+#printing and cost-complexity paramters and the 10-fold cross-validation based cp values and tree performance
+printcp(x)
+```
+
+```{r}
+plotcp(x,minline=TRUE)
+```
+
+Based on the plot of CP, when n = 4 the xerror is the lowest. It is also good for both interpretability and predictibility.
+
+```{r}
+xnew<-rpart(Class~.,data=train,control=rpart.control(cp= 0.0228311))
+#par(mai=c(0.1,0.1,0.1,0.1))
+plot(xnew,main="Classification Tree: German Credit Data",col=3, compress=TRUE, branch=0.2,uniform=TRUE)
+text(xnew,cex=0.4,col=4,use.n=TRUE,fancy=TRUE, fwidth=0.3, fheight=0.3,bg=c(5))
+```
+
+#### Generate confusion matrix of predictions using the pruned tree in the training sample
+a. How many interactions do you see?
+b. Can you interpret the tree? Do you like it? Comment
+
+```{r}
+predicted<-predict(xnew,train,type = "class")
+table(train$Class,predicted)
+round(prop.table(table(train$Class,predicted),1),2)       
+```
+
+4 variables are included in the decision tree : CheckingAccountStatus, Duration,SavingsAccountBonds, Amount. There are two interactions : 1) CheckingAccountStatus * Duration * SavingsAccountBonds 2) CheckingAccountStatus * Duration * Amount.
+
+The classification tree is very concise and clean. After several splits the classification is achieved, with the total accuracy of the model being 76.3% ((110+424)/700). Although the specificity score is 88%, the proportion of the False Positive (the observed Bad that are wrongly predicted as Good) is only 50%, just as well as random guess.
+
+#### Perform Holdout validation testing
+generate confusion matrix in the holdout sample using the tree grown in the training data set.
+
+```{r}
+predicted.holdout<-predict(xnew,holdout,type = "class")
+table(holdout$Class,predicted.holdout)
+round(prop.table(table(holdout$Class,predicted.holdout),1),2)    
+```
+
+#### Summarize results -- Compare decision tree and logistic regression.
+
+The accuracy of the model on the test set is 73.7% with a sensitivity of  43% and a specificity of 85%. The sensitivity drops below 50% and the specificity further drops by 3%. The decision tree model doesn't perform well on both the training and test sets. The scores of accuracy, sensitivity and specificity are all higher in the logistic regression model. Furthermore, by fine-tuning the threshold of the logistic model, it will be more convenienct to control the tradeoff between sensitivity and specificity and improve sensitivity in the case of credit risk. In this sense, I think the logistic regression performs better than the tree model.

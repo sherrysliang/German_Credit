@@ -1,0 +1,150 @@
+---
+title: "Linear Regression"
+author: "Sherry Liang"
+date: "1/19/2018"
+output: html_document
+---
+#### Import data
+
+```{r}
+library(ggplot2)
+library(gridExtra)
+library(lattice)
+library(caret)
+
+data(GermanCredit)
+dat<-GermanCredit
+```
+
+#### Build full model and select features first
+
+```{r}
+m.full<-lm(Amount~., data=dat)
+m.full<-step(m.full,trace = 0)
+# summary(m.full)
+```
+
+
+#### Build regression model on 63.2% training data, repeat 1000 times, and save the results
+
+```{r}
+n_size<-nrow(dat)
+df <- data.frame()
+for (i in 1:1000){
+        train_size <- 0.632* n_size
+        training.set.rows <- sample(x = n_size, size = train_size, replace = FALSE)
+        training.set <- dat[training.set.rows, ]
+        test.set <- dat[-training.set.rows, ]
+        m1<-lm(Amount ~ Duration + InstallmentRatePercentage + 
+           Telephone + Class + CheckingAccountStatus.lt.0 + CheckingAccountStatus.gt.200 + 
+           CreditHistory.NoCredit.AllPaid + Purpose.NewCar + Purpose.UsedCar + 
+           Purpose.Furniture.Equipment + Purpose.Radio.Television + 
+           Purpose.DomesticAppliance + Purpose.Repairs + Purpose.Education + 
+           Purpose.Retraining + Purpose.Business + SavingsAccountBonds.lt.100 + 
+           SavingsAccountBonds.100.to.500 + SavingsAccountBonds.500.to.1000 + 
+           EmploymentDuration.gt.7 + Personal.Male.Single + OtherDebtorsGuarantors.CoApplicant + 
+           Property.RealEstate + Property.Insurance + Property.CarOther + 
+           Job.UnemployedUnskilled + Job.UnskilledResident + Job.SkilledEmployee, data=training.set)
+        predicted.test<-predict(m1,newdata = test.set)
+        R2.test<-sum((predicted.test-mean(test.set$Amount))^2)/sum((test.set$Amount-mean(test.set$Amount))^2)
+        R2.train<-summary(m1)$r.squared
+        df<-rbind(df,cbind(t(as.matrix(m1$coefficients[1:29])),R2.train,R2.test,Fall.in.percentage=(R2.train-R2.test)/R2.train*100))        
+}
+# head(df)
+```
+
+#### Plot the distributions of all coefficients, holdout R2, and % fall in R2 
+
+```{r}
+# Duration
+plot1<-ggplot(df,aes(x=Duration))+geom_histogram(aes(y=..density..),bins=20,colour="black", fill="white") + 
+    geom_density(alpha=.2, fill="#FF6666") 
+
+# InstallmentRatePercentage
+plot2<-ggplot(df,aes(x=InstallmentRatePercentage))+geom_histogram(aes(y=..density..),bins=20,colour="black", fill="white") +
+    geom_density(alpha=.2, fill="#FF6666") 
+
+# ClassGood
+plot3<-ggplot(df,aes(x=ClassGood))+geom_histogram(aes(y=..density..),bins=20,colour="black", fill="white") +
+    geom_density(alpha=.2, fill="#FF6666") 
+
+# Purpose.NewCar
+plot4<-ggplot(df,aes(x=Purpose.NewCar))+geom_histogram(aes(y=..density..),bins=20,colour="black", fill="white") +
+    geom_density(alpha=.2, fill="#FF6666") 
+
+# R2.test
+plot5<-ggplot(df,aes(x=R2.test))+geom_histogram(aes(y=..density..),bins=20,colour="black", fill="white") +
+    geom_density(alpha=.2, fill="#FF6666") 
+
+# Fall in percentage
+plot6<-ggplot(df,aes(x=Fall.in.percentage))+geom_histogram(aes(y=..density..),bins=20,colour="black", fill="white") +
+    geom_density(alpha=.2, fill="#FF6666") 
+
+grid.arrange(plot1,plot2,plot3,plot4,plot5,plot6, ncol=2)
+```
+
+> From the distribution of the coefficients we can see that some are more in the shape of normal distribution like InstallmentRatePercentage, while some are more skewed like Purpose.NewCar. The skewness indicates that the predictor is not as stable or reliable as those normally distributed in the model. 
+The distribution of R2 of the test dataset is almost normally distributed, but the fall in percantage is obviously left skewed, which means the drop of the performance of the model on test dataset can be sometime more remarkable than average. 
+
+### Compute the averages of all 1000 coefficients, and the standard deviation of all 1000 coefficients
+
+```{r}
+df2<-data.frame()
+for (i in 1:29) {
+        df2[i,1]<-round(mean(df[,i]),2)
+        df2[i,2]<-round(sd(df[,i]),2)
+} 
+rownames(df2) <- colnames(df)[1:29]
+colnames(df2) <- c("Ave.1000Coeff","SD.1000Coeff")
+head(df2,3)
+```
+
+### Compare average of coefficients across 1000 to single model built using entire sample
+```{r}
+df2[,3]<-round(m.full$coefficients,2)
+colnames(df2)[3]<-"Coeff.full"
+df2[,4]<-round((df2[,1]-df2[,3])/df2[,3]*100,2)
+colnames(df2)[4]<-"Difference%"
+head(df2,3)
+df2[,4]
+```
+> All the difference between the average of coefficients across 1000 samples and the single model is within 5%. Different categories of Purpose have the highest deviation. 
+
+### Sort each coefficient's 1000 values. compute 2.5% -97.5% Confidence Intervals. Scale these CI's down by a factor of .632^0.5. How do these CIs compare to CIs computed from single model's CI? Tighter or broader?
+```{r}
+#calculate Quantile CI
+df.CI<-round(t(apply(df[,1:29], 2, quantile, probs = c(0.025,0.975))),2)
+colnames(df.CI)[1:2]<-c("empir.CI2.5%","empir.CI97.5%")
+#calculate CI using mean+-1.96SD
+df.CI<-cbind(df.CI,round(df2[,1]-1.96*df2[,2],2))
+df.CI<-cbind(df.CI,round(df2[,1]+1.96*df2[,2],2))
+colnames(df.CI)[3:4]<-c("form.CI2.5%","form.CI97.5%")
+head(df.CI)
+```
+> From the table above, we can see that CI computed using empirical quantile and CI computed using formula are very close to each other. I will be using CI calculated using formula in the following steps.
+
+```{r}
+# scale down
+scaled.025<-round(df2[,1]-((df2[,1])-df.CI[,3])*(0.632^0.5),2)
+scaled.975<-round(df2[,1]+(df.CI[,4]-(df2[,1]))*(0.632^0.5),2)
+df.CI<-cbind(df.CI,scaled.025,scaled.975)
+colnames(df.CI)[5:6]<-c("Scaled2.5%","Scaled97.5%")
+```
+
+```{r}
+df.CI<-cbind(df.CI,round(confint(m.full,level=0.95),2))
+colnames(df.CI)[7:8]<-c("Full2.5%","Full97.5%")
+df.CI<-cbind(df.CI,width.sample=df.CI[,6]-df.CI[,5],width.full=df.CI[,8]-df.CI[,7] )
+df.CI[,9:10]
+```
+
+```{r}
+count<-0
+for (i in 1:29) { if (df.CI[i,9]<df.CI[i,10]){count<-count+1}}
+print(paste("count:",count))
+print(paste("percent:",round(count/29,3)))
+```
+
+> From the table above, we can see that 18 out of 29 of the mutated CI of coefficients are narrower than the 1000 samples compared to the single model, which counts for 62.1%. All variables in Purpose category are the anomaly. It further indicates that the Purpose in all levels might not be a good predictor. If Purpose and Job.UnemployedUnskilled are excluded from the model, all the widths are consistently narrower in the first column. In conclusion, if the predictors are robust and stable in the model, the CI of coefficients of the sampling distribution should be narrower than the CI of coefficients of the single model.
+
+

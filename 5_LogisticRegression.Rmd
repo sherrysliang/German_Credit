@@ -1,0 +1,111 @@
+---
+title: "Logistic Regression"
+author: "Sherry Liang"
+date: 2/10/2018"
+output: html_document
+---
+### Split Data
+
+```{r, results = "hide"}
+library(ggplot2)
+library(lattice)
+library(caret)
+load("~/.RData")
+require(poLCA)
+dataPath<-"..."
+dat<-read.csv(file=paste(dataPath,"german_credit.csv",sep="/"),header=TRUE,sep=",")
+head(dat)
+```
+
+```{r,results = "hide"}
+F=c(1,2,4,5,7,8,10,11,13,15,16,18,20,21)
+for(i in F) dat[,i]=as.factor(dat[,i])
+str(dat)
+```
+
+```{r}
+#split data
+set.seed(8300)
+indexes <- sample(x=1000, size = 700, replace = FALSE)
+train <- dat[indexes, ]
+holdout <- dat[-indexes, ]
+Train <- dat[indexes, ]
+Holdout <- dat[-indexes, ]
+write.csv(Train,file = "Train.csv")
+write.csv(Holdout,file = "Holdout.csv")
+str(Train)
+```
+
+### Build Logistic Model for Train
+
+```{r}
+LogisticModelFull <- glm(Creditability ~ ., family=binomial, data = Train)
+summary(LogisticModelFull)
+```
+
+#### use step() to build a model with the lowest AIC
+
+```{r}
+backwards <- step(LogisticModelFull,trace = 0)
+formula(backwards)
+summary(backwards)
+```
+
+The AIC for the full model is 723.16 and the AIC for the backwards selected model is 710. 41. To achieve a model with the lowest AIC, only the following variables are included: Account Balance, Duration of Credit, Payment Status of Previous Credit, Purpose, Credit Amount,Value Savings, Length of current emoloyment, installment percent, sex and marital status, age, no. of credits at the bank, no. of dependents, and foreign workers.  
+
+### Confusion matrix 
+counts and proportions
+
+```{r}
+# predicted.value <- backwards$fitted.values
+predicted.value <-predict(backwards,newdata = Train,type = "response")
+predicted.value <- ifelse(predicted.value>0.5,1,0)
+table(Train$Creditability,predicted.value)
+
+```
+
+```{r}
+round(prop.table(table(Train$Creditability,predicted.value),1),3)
+```
+
+For the train set, while 53.8% of the Bad is identified as Bad, 46.2% of the Bad is falsely classified as Good. 89.5% of the Good are predicted as Good and 10.5% are wrongly categorized as Bad. Thus, the sensitivity of the train set is 53.8%, the specificity is 89.5%, and accuracy is 78.7%.
+
+The performance seems good on the first sight. However, given that the cost for identifying a Bad as Good is much higher than the cost for classifying a Good as Bad, a high sensitivity is prefered than a high specificity. A sensitivity of 53.8% is not very satisfying.
+
+### Holdout Validation
+
+#### 1) confusion matrix
+```{r}
+predicted.holdout <-predict(backwards,newdata = Holdout,type = "response")
+predicted.holdout.d <- ifelse(predicted.holdout>0.5,1,0)
+table(Holdout$Creditability,predicted.holdout.d)
+```
+
+```{r}
+round(prop.table(table(Holdout$Creditability,predicted.holdout.d),1),3)
+```
+
+For the test set, the sensitivity is 51.1%, the specificity is 88.7%, and accuracy is 77.7%. The performance of the model on the holdout set is not as good as that on the train set. A further drop on the sensitivity is very dissapointing.
+
+#### 2) Lift Charts and AUROC Curve 
+
+```{r}
+require(gains)
+gains(as.numeric(Holdout$Creditability)-1,predicted.holdout,10)
+plot(gains(as.numeric(Holdout$Creditability)-1,predicted.holdout,10))
+```
+
+```{r}
+library(AUC)
+require(AUC)
+plot(roc(predicted.holdout, Holdout$Creditability))
+```
+
+```{r}
+library("pROC")
+#train
+auc(Train$Creditability,backwards$fitted.values)
+#holdout
+auc(Holdout$Creditability,predicted.holdout)
+```
+

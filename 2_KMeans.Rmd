@@ -1,0 +1,176 @@
+---
+title: "K Means"
+author: "Sherry Liang"
+date: "1/19/2018"
+output: html_document
+---
+## 1.Select useful numeric variabls  
+
+Among all 20 variables in the dataset, 7 are numerical: Duration in month,Credit amount,Installment rate in percentage of disposable income,Present residence since,Age in years,Number of existing credits at this bank, Number of people being liable to provide maintenance for. However, the installment rate, residence duration, existing credits and people maintenance have only 3-4 levels measurement. So I decided to use only three typical numerical variables in the following analysis. 
+
+```{r}
+library(ggplot2)
+library(lattice)
+library(caret)
+data(GermanCredit)
+myvars <- c("Duration", "Amount", "Age")
+mydata <- GermanCredit[myvars]
+head(mydata)
+set.seed(830)
+```
+
+
+#### Split the dataset into training and testing sets.
+
+```{r}
+n_size <- nrow(mydata)
+train_size <- 0.632* n_size
+training.set.rows <- sample(x = n_size, size = train_size, replace = FALSE)
+training.set <- mydata[training.set.rows, ]
+test.set <- mydata[-training.set.rows, ]
+```
+
+#### Display the distribution of variables in the training set.
+
+```{r}
+par(mfrow=c(2,2))
+lapply( 1:ncol(training.set), function(x){hist(training.set[,x], main = colnames(training.set)[x] )})
+```
+- Duration: most people are in the 5-30 range, with a few in the 35-50.
+- Amount: amount is in an exponential distribution within a range of 0 to 15000.
+- Age: the distribution is also right-skewed, with most people in their 20s and 30s.Only a few observations are under 20 or above 60.
+
+## 2-3. K-Means Clustering (k=2:10) and Present the VAF
+
+```{r}
+km.VAF <- data.frame()
+for (k in 2:10){
+        km.train <- kmeans(scale(training.set), centers = k, nstart = 100)
+        train.VAF <- 1 - km.train$tot.withinss / km.train$totss
+        km.test <- kmeans(scale(test.set), centers = km.train$centers, nstart = 100)
+        test.VAF <- 1 - km.test$tot.withinss / km.test$totss 
+        km.VAF <- rbind(km.VAF, cbind(k,train.VAF,test.VAF))
+}
+
+km.VAF
+```
+
+- The VAF of training set and testing set are very similar with eack k value. The VAF increases as k increases.
+
+## 4-5. Perform Scree test and show the Scree plot for K-Means
+
+```{r}
+with(km.VAF,  {
+        plot(k, train.VAF, type = 'b', col = 'red', 
+                xlab = 'Number of Clusters',
+                ylab = 'Variance Accounted For')
+        lines(k, test.VAF, type = 'b', col = 'blue')
+        title(main="Scree Plot for K-Means Clutstering")
+        legend(
+                x='bottomright',
+                legend = c('Train','Test'), 
+                lty = c(1,1),
+                col = c('red','blue'))
+})
+
+```
+- According to the Scree Plot for k-means clustering, the elbow is at the point where k=3. However, the VAF when k=3 is smaller than 0.6. When k increases, the VAF performs better. So I decided to compare the clusters for k = 3, 4, 5, 6 with a combination of k, VAF, interpretability and relative cluster sizes.
+
+## 6. Choose 1 K-Means Solution
+#### 1) use the criteria of VAF
+#### 2) Interpretability of the segments
+#### 3) Doing well in Holdout. (VAF, relative cluster sizes as measures of stability)
+
+```{r}
+# show the centers and size of each train and test set
+for (i in 3:6){
+        km <-kmeans(scale(training.set), centers = i, nstart = 100)
+        km.test <-kmeans(scale(test.set), centers = km$centers, nstart = 100)
+        # unscale the center
+        centers <- t(apply(km$centers, 1, function(r) r * attr(scale(training.set), 'scaled:scale') + attr(scale(training.set), 'scaled:center')))
+        #VAF
+        train.VAF <- 1 - km$tot.withinss / km$totss
+        test.VAF <- 1 - km.test$tot.withinss / km.test$totss 
+        #size
+        kmsize<-matrix(km$size,dimnames = list(c(),c("Train.Size")))
+        kmsizeper<-matrix(round(kmsize/nrow(training.set)*100,2),dimnames = list(c(),c("Train.Size(%)")))
+        kmsize.test<-matrix(km.test$size,dimnames = list(c(),c("Test.Size")))
+        kmsizeper.test<-matrix(round(kmsize.test/nrow(test.set)*100,2),dimnames = list(c(),c("Test.Size(%)")))
+        print(paste("k =",i, ", train.VAF =", round(train.VAF,4), ", test.VAF =", round(test.VAF,4)))
+        print(cbind(round(centers,2),kmsize,kmsizeper,kmsize.test,kmsizeper.test))
+}
+
+```
+
+- After comparing the value of k, VAF, interpretability and performance on test set, I have chosen the K-means solution when k=5.
+1) k and VAF: For the elbow point k=3, the VAF doesn't perform very well. When k=4, VAF is around 0.65; k=5, VAF is close to 0.70; when k =6, VAF is about 0.73. I'd suggest to take k = 4 or 5 for a better balance between 4 and 5.
+2) Interpretability: When k=3, the 3 clusters are easys to characterize: lower age(29.20) lower amount(2056.33) and lower duration(16.03), medium age (33.45), higher amount(6782.69) and higher duration(37.68), and seniors (50.52) with lower amount(2493.19) and lower duration(16.96). However, given that most observations are in the age range of 20-30, the clusters are not very useful when k=3. For k = 4,5,6 the clusters are all interpretable.People in their 20s and 30s will be divided into more clusters according to their credit amount and credit duration.
+3) Performance on Holdout: The difference of VAF between training and testing sets are small for each k value (<0.012). As for the difference of clusters size between training and testing datasets, the difference is smallest when k=5. The second-best is when k=4. The difference of percentage of size is relatively large for k= 3 or 6.
+
+- In sum, I will choose k = 5 for better VAF, interpretability and stability.
+
+## 7. KO-Means Clustering (k=3:5)
+```{r}
+
+source("~/Documents/Analytics_UC/Data_Mining_Principles/Week2/komeans.r")
+ko.VAF <- data.frame()
+for (k in 3:5){
+        ko.train = komeans(data=training.set,nclust=k,lnorm=2,tolerance=.001,nloops = 50,seed=830)
+        #ko.test = komeans(data=test.set,nclust=k,lnorm=2,tolerance=.001,nloops = 50,seed=830)
+        #ko.VAF <- rbind(ko.VAF, cbind(k, ko.train$VAF,ko.test$VAF))
+        ko.VAF <- rbind(ko.VAF, cbind(k, ko.train$VAF))
+} 
+ko.VAF
+```
+
+## 8. Compare the chosen K-Means and the KO-means from an interpretability perspective
+
+#### cross table of size of clusters for kmeans and komeans:
+
+```{r}
+km5.train<-kmeans(scale(training.set), centers = 5, nstart = 100)
+ko5.train = komeans(data=training.set,nclust=5,lnorm=2,tolerance=.001,nloops = 50,seed=830)
+addmargins(table(km5.train$cluster,ko5.train$Group))
+```
+- The top 5 groups are: 1, 25, 0, 3, 13.
+
+#### centers of the top 5 groups of komeans clustering when k=5
+```{r}
+lst<-c(1,25,0,3,13)
+for (i in lst){
+     print(i)
+     print(colMeans(ko5.train$data[ko5.train$Group[,1]==i,]))
+}
+```
+The top 5 groups of komeans solution when k=5 are: 
+A) people in their mid 20s with relatively LOW credit amount and LOW credit duration; 
+B) people in their mid 30s with relatively LOW credit amount and MEDIUM credit duration; 
+C) people in their mid 30s with relatively HIGHER credit amount and HIGHER credit duration; 
+D) people in their early 30s with relatively LOW credit amount and LOW credit duration; 
+E) people in their late 20s with MEDIUM-HIGH credit amount and LOW credit duration.
+
+#### Centroids of kmeans clustering when k=5
+```{r}
+t(apply(km5.train$centers, 1, function(r) r * attr(scale(training.set), 'scaled:scale') + attr(scale(training.set), 'scaled:center')))
+```
+The order of the cluster size is :1, 5, 3, 4, 2.
+
+The 5 clusters of kmeans solution when k=5 are: 
+1) people in their 20s with relatively LOW credit amount and LOW credit duration (corresponding to Group A in komeans method); 
+2) people in their 30s with very HIGH credit amount and HIGH credit duration (similar to Group C in komeans but the credit amount and duration are both much higher than Group C); 
+3) people in their 40s with LOW credit amount and LOW credit duration (this group is not covered in komeans); 
+4) people in their early 30s with MEDIUM credit amount and MEDIUM credit duration (more similar to Group C than the second group here); 
+5) senior people in with MEDIUM credit amount and MEDIUM credit duration (this group is not covered in komeans).
+
+Because most observations are in the age range of 20-30, the top 5 clusters in komeans don't cover people over 40, but komeans is more useful to partition the majority. While the interpretability for both methods are acceptable, I think the kmeans method is more clear and comprehensive.
+
+## 9. Summarize results and interpret the clusters/segments
+
+In summary, I think kmeans method with 5 clusters has higher VAF and better stability and interpretability. The 5 clusters are: 1) younger people in their 20s with LOW credit amount and credit duration; 2) people in their 30s with very HIGH credit amount and credit duration; 3) people in their 30s with very MEDIUM credit amount and credit duration; 4) people after 40 with LOW credit amount and credit duration; 5) people after 5 with MEDIUM credit amount and credit duration.
+
+## 10. Recruiting consumers for further research
+
+a. I will use stratified random sampling according to the subgroups.
+b. Consumers from diverse background and who are independent from each other.
+c. By asking questions where possible. Age is easy to identify but it might be useful to ask indirect questions regarding sensitive topics on credit amount and duration.
+

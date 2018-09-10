@@ -1,0 +1,67 @@
+---
+title: "Cluster-wise regression"
+author: "Sherry Liang"
+date: "3/3/2018"
+output: html_document
+---
+#### Import data and select features
+
+I selected 8 variables for further analysis: Duration,InstallmentRatePercentage,ResidenceDuration,Age,NumberExistingCredits,NumberPeopleMaintenance,Telephone,ForeignWorker
+
+```{r,warning=FALSE}
+load("~/.RData") 
+library(rpart)
+library(flexmix)
+source("~/Documents/clustreg.txt")
+source("~/Documents/clustreg.predict.txt")
+
+train0<-read.csv(file="~/Documents/Analytics/Data_Mining/Assignment4/Training700.csv")
+holdout0<-read.csv(file="~/Documents/Analytics/Data_Mining/Assignment4/Holdout300.csv")
+# select numeric variables and set Amount as the 1st column
+train <- train0[c(3,2,4:10)]
+holdout <- holdout0[c(3,2,4:10)]
+```
+
+#### Build Model
+
+```{r}
+clustreg.1<-clustreg(train,1,1,830,1)
+clustreg.2<-clustreg(train,2,25,830,12)
+clustreg.3<-clustreg(train,3,25,830,12)
+
+plot(c(1,2,3),c(clustreg.1$rsq.best,clustreg.2$rsq.best,clustreg.3$rsq.best),ylim=c(0,1),type="l",col=4,main="VAF Plot for German Credit Data: Cluster-wise Regression", ylab="Variance Accounted For",xlab="Number of Clusters")  
+```
+
+> From the plot above we can see that the Variance Accounted For by the model increases as the number of cluster increases.
+
+```{r}
+clustreg.2$results[[1]]
+```
+> There are 4 variables statistically significant in the model with 2 clusters: Duration, InstallmentRatePercentage, Age and Telephone.
+
+```{r}
+clustreg.3$results[[1]]
+```
+
+> There are also 4 variables statistically significant in the model with 3 clusters: Duration, InstallmentRatePercentage, Telephone and ForeignWorker. Age is no longer statistically significant but ForeignWorker is.
+
+```{r}
+cbind(Cluster2.R2=clustreg.2$results[[1]]$r.squared,Cluster2.AdjR2=clustreg.2$results[[1]]$adj.r.squared,Cluster3.R2=clustreg.3$results[[1]]$r.squared,Cluster3.AdjR2=clustreg.3$results[[1]]$adj.r.squared)
+```
+> The model with 3 clusters has the best performance of R2 and adjusted-R2. Therefore I tend to choose the clustering regression model with 3 clusters. But we still need to perform holdout validation.
+
+```{r}
+ho.2=clustreg.predict(clustreg.2, holdout)
+ho.2$rsq
+table((ho.2$cluster))
+round(prop.table(table((ho.2$cluster))),3)
+```
+
+```{r}
+ho.3=clustreg.predict(clustreg.3, holdout)
+ho.3$rsq
+table((ho.3$cluster))
+round(prop.table(table((ho.3$cluster))),3)
+```
+
+> The R2 of the holdout dataset of 3 clusters are still better than the 2 clusters. The distribution of observations of the 2 clusters model is 78.3% and 21.7%. For model with 3 clusters, each cluster account for 56.3%, 11.0% and 32.7%. Although neither is equally distributed, the 3 clusters model is still better. Therefore I chose the model with 3 clusters.

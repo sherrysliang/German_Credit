@@ -1,0 +1,122 @@
+---
+title: "Latent Component Analysis"
+author: "Sherry Liang"
+date: "1/31/2018"
+output: html_document
+---
+### Q1. Select useful categorical variables for LCA
+
+```{r}
+library(ggplot2)
+#library(lattice)
+#library(caret)
+#load("~/.RData") 
+require(poLCA)
+
+dataPath<-"..."
+dat<-read.csv(file=paste(dataPath,"german_credit.csv",sep="/"),header=TRUE,sep=",")
+#summary(dat)
+
+
+myvars <- c("Account.Balance", "Payment.Status.of.Previous.Credit",  "Value.Savings.Stocks",
+            "Length.of.current.employment","Sex...Marital.Status", "No.of.Credits.at.this.Bank",
+            "Concurrent.Credits", "Occupation", "Type.of.apartment","Purpose")
+mydata <- dat[myvars]
+mydata$Payment.Status.of.Previous.Credit<-mydata$Payment.Status.of.Previous.Credit+1
+mydata$Purpose<-mydata$Purpose+1
+```
+
+```{r}
+#split data
+n_size <- nrow(mydata)
+train_size <- 0.632* n_size
+set.seed(830)
+training.set.rows <- sample(x = n_size, size = train_size, replace = FALSE)
+training.set <- mydata[training.set.rows, ]
+test.set <- mydata[-training.set.rows, ]
+```
+
+### Q2. Run LCA and determine number of classes
+
+```{r}
+lcFormula <- cbind(Account.Balance, Payment.Status.of.Previous.Credit,  Value.Savings.Stocks,
+            Length.of.current.employment,Sex...Marital.Status, No.of.Credits.at.this.Bank,
+            Concurrent.Credits, Occupation, Type.of.apartment,Purpose)~1
+
+metrics<- data.frame()
+for (i in 2:6){
+        lc.res <- poLCA(lcFormula, training.set,nclass=i,nrep=100,maxiter=10000,
+                         tol=.001,verbose=FALSE,graphs=FALSE,probs.start=NULL)
+        metrics <- rbind(metrics, cbind(i,lc.res$bic,lc.res$aic))
+}
+metrics
+```
+
+```{r}
+g <- ggplot(metrics, aes(metrics$i))
+g <- g + geom_line(aes(y=metrics$V2), colour="darkblue")
+g <- g + geom_line(aes(y=metrics$V3), colour="skyblue")
+g
+```
+
+#### Choosing Number of clusters:
+Choose n=2 because BIC is the lowest and the difference between AIC and BIC is smallest. In addition, when n=2 the size of cluseters are more equally distributed (when n=3, the size of clusters is roughly 10%, 45% and 45%) and the clusters are more interpretable. 
+
+
+```{r}
+set.seed(830)
+lc2.res <- poLCA(lcFormula, training.set,nclass=2,nrep=100,maxiter=10000,
+                         tol=.001,verbose=FALSE,graphs=TRUE,probs.start=NULL)
+```
+
+```{r}
+table(lc2.res$predclass)
+```
+
+```{r}
+lc2.res$probs
+```
+
+#### Interpreting Classes based on Graph and Probabilities:
+
+The two classes are in general equally distributed, accounting for nearlly 50% of the population respectively. 
+
+Class 1 :
+This class is characterised by married/widowed male with high account balance and more than one credits at bank. 
+
+Class 2: 
+This class is characterised by single male customers with no account balance and no or 1 credit at the bank. 
+
+### Q3. Holdout Validation
+
+```{r}
+# test
+test<-poLCA(lcFormula,test.set,nclass = 2,nrep=100,maxiter=10000,
+                         tol=.001,verbose=FALSE,graphs=TRUE,probs.start=lc2.res$probs)
+```
+
+```{r}
+(test$aic)
+(test$bic)
+```
+
+```{r}
+test$probs
+```
+
+
+### Q4. Test Results and Conclusions Drawn:
+
+1. Relative class sizes: There appears to be a reallocation to certain degree in population shares. The proportion of the first class changed from 48% to 42%, and the second from 52% to 58%.
+
+2. Goodness of Fit: The AIC as well as BIC values in test are actually considerably better than corresponding values in train, suggesting the model is fitting well.
+
+3. Interpretability: as seen via the conditional probabilities and graphs, since the probabilties were maintained there is agreement in the class interpretations.
+
+4. Stability: There appears to have been a small change in the population proportion of individual classes from train to test. However with improvement in AIC,BIC this instability may be negligible.
+
+5. Adequacy of Solution: There are overlaps in quite a few variables among different classes. But as the number of class increases, it is difficult to interpret the characteristics of the class. (e.g. it seems that there is some confusion about the data...the levels of sex & marital status is 4 in csv and 5 in word; there are many records characterized as unemployed in the length of employment and executives in the occupation. )
+
+### Q5. Comparison against K-Means Clusters
+
+K-Means is valid only for numerical data, while LCA is used for categorical data. While the LCA classes tend to overlap in characteristics, the Kmeans clusters are in general mutually exclusive. Thus K-means clusters are more interpretable of the two solutions. 

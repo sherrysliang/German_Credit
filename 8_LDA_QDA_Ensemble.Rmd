@@ -1,0 +1,103 @@
+---
+title: "Linear and Quadratic Discriminant Analysis and Ensemble Model"
+author: "Sherry Liang"
+date: "3/3/2018"
+output: html_document
+---
+
+```{r}
+library(MASS)
+require(MASS)
+library(scales)
+require(scales)
+
+train0<-read.csv(file="Training.csv")
+holdout0<-read.csv(file="Holdout.csv")
+train <- train0[c(2,3,6,11)]
+holdout <- holdout0[c(2,3,6,11)]
+```
+
+#### LDA
+```{r}
+ldafit<-lda(Class~.,data = train)
+#summary(ldafit)
+#plot(ldafit)
+```
+
+#### Holdout validation testing of LDA
+```{r}
+lda.pred.train<-predict(ldafit, newdata=train)$class
+lda.pred.holdout <- predict(ldafit, newdata=holdout)$class
+
+(table(holdout$Class,lda.pred.holdout))
+(round(prop.table(table(holdout$Class,lda.pred.holdout),1),3))
+lda.accuray<-percent((13+204)/300)
+print(paste("Accuracy of LDA: ",lda.accuray))
+```
+
+
+#### QDA
+```{r}
+qdafit<-qda(Class~.,data = train)
+#summary(qdafit)
+```
+
+#### Holdout validation testing of QDA
+```{r}
+qda.pred.train <- predict(qdafit, newdata=train)$class
+qda.pred.holdout <- predict(qdafit, newdata=holdout)$class
+(table(holdout$Class,qda.pred.holdout))
+(round(prop.table(table(holdout$Class,qda.pred.holdout),1),3))
+qda.accuray<-percent((21+193)/300)
+print(paste("Accuracy of QDA: ",qda.accuray))
+```
+
+### Ensemble
+
+```{r}
+source("2model.R")
+# log.pred.value.train,log.pred.value.holdout, dt.pred.train,dt.pred.holdout
+lda.pred.train<-ifelse(lda.pred.train=="Bad",0,1)
+qda.pred.train<-ifelse(qda.pred.train=="Bad",0,1)
+lda.pred.holdout<-ifelse(lda.pred.holdout=="Bad",0,1)
+qda.pred.holdout<-ifelse(qda.pred.holdout=="Bad",0,1)
+
+pred.train<-as.data.frame(cbind(log.pred.value.train,dt.pred.train,lda.pred.train,qda.pred.train))
+pred.train$sum<-rowSums(pred.train[,1:4])
+set.seed(1123)
+for (i in 1:nrow(pred.train)){
+        if (rowSums(pred.train[i,1:4])<2)
+                {pred.train$Ensemble[i]<-0}
+        else if (rowSums(pred.train[i,1:4])>2)
+                {pred.train$Ensemble[i]<-1}
+        else {pred.train$Ensemble[i]<-sample(0:1,1)}
+}
+# subset(pred.train,sum==2)
+pred.holdout<-as.data.frame(cbind(log.pred.value.holdout,dt.pred.holdout,lda.pred.holdout,qda.pred.holdout))
+pred.holdout$sum<-rowSums(pred.holdout[,1:4])
+set.seed(1123)
+for (i in 1:nrow(pred.holdout)){
+        if (rowSums(pred.holdout[i,1:4])<2)
+                {pred.holdout$Ensemble[i]<-0}
+        else if (rowSums(pred.holdout[i,1:4])>2)
+                {pred.holdout$Ensemble[i]<-1}
+        else {pred.holdout$Ensemble[i]<-sample(0:1,1)}
+}
+
+```
+
+```{r}
+table(train$Class,pred.train$Ensemble)
+round(prop.table(table(train$Class,pred.train$Ensemble),1),3)       
+train.table<-as.data.frame(table(train$Class,pred.train$Ensemble))
+print(paste("Accuracy of Ensemble model on Training dataset: ",percent((train.table$Freq[1]+train.table$Freq[4])/700)))
+```
+
+```{r}
+table(holdout$Class,pred.holdout$Ensemble)
+round(prop.table(table(holdout$Class,pred.holdout$Ensemble),1),3)
+holdout.table<-as.data.frame(table(holdout$Class,pred.holdout$Ensemble))
+print(paste("Accuracy of Ensemble model on Holdout dataset: ",percent((holdout.table$Freq[1]+holdout.table$Freq[4])/300)))
+```
+
+> Previously, the accuracy of holdout dataset for the logistic model, decision tree model, LDA and QDA is 77.0%, 73.6%, 72.3% and 71.3% respectively. The accuracy of the Ensemble model is 74.3% and is subject to the sample seed for random decision on observations with 2 Bad and 2 Good prediction. It is slightly better than the accuracy of decision tree, LDA and QDA, but the performance of logistic model is still the best in terms of prediction accuracy of the holdout test.  And the logistic model is still the best at detecting Bad cases by this moment. I think that the low accuracy overall is due to the imbalance of Good and Bad classes, and different model might be good at predicting the Bad in different cases. And if we can determine the class of observations with tied results from the four models based on more in-depth examination and comparison of the models, we might have better accuracy from the Ensemble model.
